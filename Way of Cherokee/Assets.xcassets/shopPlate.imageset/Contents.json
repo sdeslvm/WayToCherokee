@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "shopPlate.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
