@@ -80,6 +80,109 @@ struct DominanceSlider: View {
     }
 }
 
+// Tutorial System
+enum TutorialStep: Int, CaseIterable {
+    case troopGeneration = 0
+    case troopMovement = 1
+    case battleSystem = 2
+    case gameObjective = 3
+    
+    var title: String {
+        switch self {
+        case .troopGeneration:
+            return "Troop Generation"
+        case .troopMovement:
+            return "Moving Troops"
+        case .battleSystem:
+            return "Battle System"
+        case .gameObjective:
+            return "Game Objective"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .troopGeneration:
+            return "Each territory generates troops over time. The more territories you control, the stronger your army becomes."
+        case .troopMovement:
+            return "Tap and drag from your territory to send troops to attack neighboring territories."
+        case .battleSystem:
+            return "Battles happen automatically. Attack when your army is stronger to capture territories."
+        case .gameObjective:
+            return "Your goal is to capture all territories and become the last player standing."
+        }
+    }
+    
+    var actionHint: String {
+        switch self {
+        case .troopGeneration:
+            return "Watch how your troops increase over time"
+        case .troopMovement:
+            return "Try to attack a neighboring territory by dragging from your territory"
+        case .battleSystem:
+            return "Attack a territory with fewer troops than yours"
+        case .gameObjective:
+            return "Capture all territories to win the game"
+        }
+    }
+}
+
+struct TutorialOverlay: View {
+    let step: TutorialStep
+    let onNext: () -> Void
+    let onSkip: () -> Void
+    let isActionRequired: Bool
+    
+    var body: some View {
+        VStack {
+            if !isActionRequired {
+                Spacer()
+                VStack(spacing: 20) {
+                    Text(step.title)
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                    
+                    Text(step.description)
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white)
+                        .padding(.horizontal)
+                    
+                    HStack(spacing: 20) {
+                        Button("Skip Tutorial") {
+                            onSkip()
+                        }
+                        .foregroundColor(.white)
+                        
+                        Button("Next") {
+                            onNext()
+                        }
+                        .foregroundColor(.white)
+                    }
+                    .padding()
+                }
+                .padding()
+                .background(Color.black.opacity(0.8))
+                .cornerRadius(15)
+                .padding()
+                Spacer()
+            } else {
+                VStack {
+                    Text(step.actionHint)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(10)
+                        .padding(.top, 50)
+                    Spacer()
+                }
+            }
+        }
+    }
+}
+
 struct Game: View {
     // Теперь координаты задаются как доли от ширины и высоты (от 0 до 1)
     @State private var regions: [(id: Int, owner: String, troops: Int, relativePosition: CGPoint, requiredTroops: Int)] = [
@@ -113,6 +216,64 @@ struct Game: View {
         regions.count
     }
 
+    @AppStorage("isFirstLaunch") private var isFirstLaunch: Bool = true
+    @AppStorage("com.waychrk.game.showTutorial") private var showTutorial: Bool = true
+    @State private var currentTutorialStep: TutorialStep = .troopGeneration
+    @State private var isActionRequired: Bool = false
+    @State private var hasCompletedAction: Bool = false
+    @State private var lastTroopCount: Int = 0
+    @State private var hasSeenTroopGeneration: Bool = false
+    @State private var hasAttemptedAttack: Bool = false
+    @State private var hasWonBattle: Bool = false
+    
+    private func nextTutorialStep() {
+        if let currentIndex = TutorialStep.allCases.firstIndex(of: currentTutorialStep),
+           currentIndex < TutorialStep.allCases.count - 1 {
+            currentTutorialStep = TutorialStep.allCases[currentIndex + 1]
+            isActionRequired = true
+            hasCompletedAction = false
+        } else {
+            showTutorial = false
+            isFirstLaunch = false
+        }
+    }
+    
+    private func skipTutorial() {
+        showTutorial = false
+        isFirstLaunch = false
+    }
+    
+    private func checkTutorialProgress() {
+        switch currentTutorialStep {
+        case .troopGeneration:
+            if !hasSeenTroopGeneration {
+                for region in regions where region.owner == "player" {
+                    if region.troops > lastTroopCount {
+                        hasSeenTroopGeneration = true
+                        isActionRequired = false
+                        hasCompletedAction = true
+                        break
+                    }
+                }
+            }
+        case .troopMovement:
+            if hasAttemptedAttack {
+                isActionRequired = false
+                hasCompletedAction = true
+            }
+        case .battleSystem:
+            if hasWonBattle {
+                isActionRequired = false
+                hasCompletedAction = true
+            }
+        case .gameObjective:
+            if playerRegions > 1 {
+                isActionRequired = false
+                hasCompletedAction = true
+            }
+        }
+    }
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -192,6 +353,16 @@ struct Game: View {
                             .frame(width: 20, height: 300)
                     }
                 }
+
+                if showTutorial {
+                    TutorialOverlay(
+                        step: currentTutorialStep,
+                        onNext: nextTutorialStep,
+                        onSkip: skipTutorial,
+                        isActionRequired: isActionRequired
+                    )
+                    .zIndex(3)
+                }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .background(
@@ -202,6 +373,7 @@ struct Game: View {
             )
             .onReceive(playerTimer) { _ in
                 if !gameOver {
+                    lastTroopCount = regions.first { $0.owner == "player" }?.troops ?? 0
                     for i in regions.indices {
                         if regions[i].owner == "player" || regions[i].owner == "enemy" {
                             regions[i].troops += 1
@@ -209,6 +381,7 @@ struct Game: View {
                     }
                     updateTroopsInTransit(geometry: geometry)
                     checkGameOver()
+                    checkTutorialProgress()
                 }
             }
             .onReceive(enemyTimer) { _ in
@@ -226,13 +399,12 @@ struct Game: View {
     }
 
     private func handleAttackEnd(at point: CGPoint, from sourceIndex: Int, geometry: GeometryProxy) {
-        var isPad = UIDevice.current.userInterfaceIdiom == .pad
-
         if let targetIndex = findTargetRegion(at: point, geometry: geometry), targetIndex != sourceIndex {
+            hasAttemptedAttack = true
             let sourcePos = absolutePosition(regions[sourceIndex].relativePosition, in: geometry)
             let targetPos = absolutePosition(regions[targetIndex].relativePosition, in: geometry)
             let dist = distance(from: sourcePos, to: targetPos)
-            if dist < (isPad ? 450 : 150) {
+            if dist < 150 {
                 let troopsToSend = regions[sourceIndex].troops
                 let requiredTroops = regions[targetIndex].requiredTroops
                 if troopsToSend >= requiredTroops {
@@ -281,6 +453,7 @@ struct Game: View {
                 if result > 0 {
                     regions[targetIndex].owner = "player"
                     regions[targetIndex].troops = result
+                    hasWonBattle = true
                 } else if result < 0 {
                     regions[targetIndex].owner = "enemy"
                     regions[targetIndex].troops = -result

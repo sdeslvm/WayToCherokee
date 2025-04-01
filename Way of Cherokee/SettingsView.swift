@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings = CheckingSound()
+    @AppStorage("com.waychrk.game.showTutorial") private var showTutorial: Bool = false
     
     var body: some View {
         GeometryReader { geometry in
@@ -68,7 +69,15 @@ struct SettingsView: View {
                                         }
                                 }
                             
+                                    
                             }
+                            Image(.settingsBtn)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 130, height: 80)
+                                .onTapGesture {
+                                    showTutorial = true
+                                }
                                                         
                         }
 
